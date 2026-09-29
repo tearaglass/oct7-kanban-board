@@ -351,7 +351,7 @@ authForm.addEventListener("submit", async (event) => {
   authStatus.textContent = "";
   const { error } = await supabase.auth.signInWithOtp({
     email: authEmail.value.trim().toLocaleLowerCase(),
-    options: { emailRedirectTo: window.location.origin },
+    options: { emailRedirectTo: window.location.origin + window.location.pathname },
   });
   authStatus.textContent = error ? "Access unavailable" : "Check your email";
 });
