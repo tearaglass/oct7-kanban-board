@@ -10,9 +10,9 @@ const columns = [
 ];
 
 const members = [
-  { email: "oct7sales@oct7sales.com", color: "#a45e49" },
-  { email: "oct7sales@gmail.com", color: "#537b87" },
-  { email: "jlong@oct7sales.com", color: "#71834f" },
+  { name: "Matthew", email: "oct7sales@oct7sales.com", color: "#a45e49" },
+  { name: "Laney", email: "oct7sales@gmail.com", color: "#537b87" },
+  { name: "Jay", email: "jlong@oct7sales.com", color: "#71834f" },
 ];
 const memberByEmail = new Map(members.map((member) => [member.email, member]));
 const urgencyLabels = ["Low", "Medium", "High", "Critical"];
@@ -437,7 +437,7 @@ function renderAssigneeOptions(select, selected = null) {
   for (const member of members) {
     const option = document.createElement("option");
     option.value = member.email;
-    option.textContent = member.email;
+    option.textContent = `${member.name} — ${member.email}`;
     select.append(option);
   }
   select.value = selected || "";
