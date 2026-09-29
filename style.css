@@ -333,6 +333,105 @@ dialog::backdrop {
   background: #fbf8ef;
 }
 
+.chat-widget {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 10;
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+#chat-toggle {
+  min-width: 82px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  font-weight: 600;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.chat-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(360px, calc(100vw - 24px));
+  height: min(470px, calc(100dvh - 90px));
+  min-height: 250px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 6px 7px 0 rgba(34, 31, 26, 0.3);
+  overflow: hidden;
+}
+
+.chat-panel[hidden] {
+  display: none;
+}
+
+.chat-header {
+  border-bottom: 1px solid var(--ink);
+  padding: 11px 13px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.chat-messages {
+  min-height: 0;
+  margin: 0;
+  padding: 12px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.chat-item {
+  margin-bottom: 10px;
+  border-left: 4px solid var(--chat-color, var(--line));
+  padding: 6px 9px;
+  background: #f8f4e8;
+}
+
+.chat-meta {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font: 0.7rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.chat-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-form {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid var(--line);
+  padding: 11px;
+}
+
+.chat-form label {
+  font-size: 0.85rem;
+}
+
+.chat-form textarea {
+  width: 100%;
+  min-height: 56px;
+  max-height: 120px;
+  resize: vertical;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  padding: 8px;
+  background: #fbf8ef;
+}
+
+.chat-form button {
+  justify-self: end;
+}
+
+.chat-form output:not(:empty) {
+  color: var(--red);
+  font-size: 0.8rem;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -346,6 +445,11 @@ dialog::backdrop {
 }
 
 @media (max-width: 760px) {
+  .chat-widget {
+    right: 12px;
+    bottom: 12px;
+  }
+
   .topbar {
     align-items: stretch;
     flex-direction: column;

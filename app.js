@@ -1,4 +1,5 @@
 const STORAGE_KEY = "oct7-kanban-board-v1";
+const CHAT_STORAGE_KEY = "oct7-kanban-chat-v1";
 const SUPABASE_MODULE = "https://esm.sh/@supabase/supabase-js@2.117.2";
 
 const columns = [
@@ -24,6 +25,9 @@ let draggedTaskId = null;
 let supabase = null;
 let sharedMode = false;
 let taskChannel = null;
+let chatChannel = null;
+let chatMessages = loadLocalChat();
+let currentEmail = null;
 
 const app = document.querySelector("#app");
 const authScreen = document.querySelector("#auth-screen");
@@ -39,6 +43,12 @@ const taskTitle = document.querySelector("#task-title");
 const columnPicker = document.querySelector("#column-picker");
 const taskAssignee = document.querySelector("#task-assignee");
 const taskUrgency = document.querySelector("#task-urgency");
+const chatPanel = document.querySelector("#chat-panel");
+const chatToggle = document.querySelector("#chat-toggle");
+const chatList = document.querySelector("#chat-messages");
+const chatForm = document.querySelector("#chat-form");
+const chatInput = document.querySelector("#chat-message");
+const chatStatus = document.querySelector("#chat-status");
 
 function emptyState() {
   return { version: 1, tasks: [] };
@@ -84,6 +94,15 @@ function saveLocalState() {
   if (!sharedMode) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function loadLocalChat() {
+  try {
+    const value = JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY));
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
 function showApp() {
   authScreen.hidden = true;
   app.hidden = false;
@@ -101,6 +120,7 @@ async function initialize() {
   renderAssigneeOptions(taskAssignee);
   renderUrgencyOptions(taskUrgency);
   renderBoard();
+  renderChatMessages();
   window.setInterval(updateUrgencyAppearance, 60 * 1000);
   const config = window.OCT7_CONFIG || {};
 
@@ -126,6 +146,8 @@ async function initialize() {
 async function handleSession(session) {
   if (!session) {
     stopRealtime();
+    stopChatRealtime();
+    currentEmail = null;
     showAuth();
     return;
   }
@@ -143,9 +165,84 @@ async function handleSession(session) {
     return;
   }
 
+  currentEmail = email;
   await loadSharedState();
+  await loadChatMessages();
   startRealtime();
+  startChatRealtime();
   showApp();
+}
+
+async function loadChatMessages() {
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .select("id,sender_email,body,created_at")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) {
+    chatStatus.textContent = "Access unavailable";
+    return;
+  }
+  chatStatus.textContent = "";
+  chatMessages = data.reverse().map((message) => ({
+    id: message.id,
+    senderEmail: message.sender_email,
+    body: message.body,
+    createdAt: message.created_at,
+  }));
+  renderChatMessages();
+}
+
+function startChatRealtime() {
+  stopChatRealtime();
+  chatChannel = supabase
+    .channel("oct7-chat")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, loadChatMessages)
+    .subscribe();
+}
+
+function stopChatRealtime() {
+  if (chatChannel && supabase) supabase.removeChannel(chatChannel);
+  chatChannel = null;
+}
+
+function renderChatMessages() {
+  chatList.replaceChildren();
+  for (const message of chatMessages) {
+    const item = document.createElement("li");
+    item.className = "chat-item";
+    item.style.setProperty("--chat-color", memberByEmail.get(message.senderEmail)?.color || "#aaa18f");
+    const meta = document.createElement("div");
+    meta.className = "chat-meta";
+    const sender = memberByEmail.get(message.senderEmail)?.name || message.senderEmail;
+    const time = new Date(message.createdAt).toLocaleString([], {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    });
+    meta.textContent = sender ? `${sender} · ${time}` : time;
+    const body = document.createElement("div");
+    body.className = "chat-body";
+    body.textContent = message.body;
+    item.append(meta, body);
+    chatList.append(item);
+  }
+  chatList.scrollTop = chatList.scrollHeight;
+}
+
+async function sendChatMessage(body) {
+  if (!sharedMode) {
+    chatMessages.push({ id: crypto.randomUUID(), senderEmail: null, body, createdAt: new Date().toISOString() });
+    chatMessages = chatMessages.slice(-200);
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatMessages));
+    renderChatMessages();
+    return true;
+  }
+  const { error } = await supabase.from("chat_messages").insert({ sender_email: currentEmail, body });
+  if (error) {
+    chatStatus.textContent = "Access unavailable";
+    return false;
+  }
+  await loadChatMessages();
+  return true;
 }
 
 async function loadSharedState() {
@@ -499,8 +596,47 @@ authForm.addEventListener("submit", async (event) => {
 
 signOutButton.addEventListener("click", async () => {
   stopRealtime();
+  stopChatRealtime();
   await supabase.auth.signOut();
   showAuth();
+});
+
+chatToggle.addEventListener("click", () => {
+  const open = chatPanel.hidden;
+  chatPanel.hidden = !open;
+  chatToggle.setAttribute("aria-expanded", String(open));
+  if (open) {
+    chatList.scrollTop = chatList.scrollHeight;
+    chatInput.focus();
+  } else {
+    chatToggle.focus();
+  }
+});
+
+chatPanel.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  chatPanel.hidden = true;
+  chatToggle.setAttribute("aria-expanded", "false");
+  chatToggle.focus();
+});
+
+chatInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    chatForm.requestSubmit();
+  }
+});
+
+chatForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const body = chatInput.value.trim();
+  if (!body) return;
+  const sendButton = chatForm.querySelector("button");
+  sendButton.disabled = true;
+  const sent = await sendChatMessage(body);
+  if (sent) chatInput.value = "";
+  sendButton.disabled = false;
+  chatInput.focus();
 });
 
 document.querySelector("#add-task").addEventListener("click", () => {
