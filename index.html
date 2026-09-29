@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>October 7 Sales</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <section id="auth-screen" class="auth-screen" hidden>
+      <form id="auth-form" class="auth-card">
+        <h1>October 7 Sales</h1>
+        <label>
+          <span>Email</span>
+          <input id="auth-email" type="email" autocomplete="email" required />
+        </label>
+        <button type="submit">Send sign-in link</button>
+        <output id="auth-status" aria-live="polite"></output>
+      </form>
+    </section>
+
+    <main id="app" class="app-shell" hidden>
+      <header class="topbar">
+        <h1>October 7 Sales</h1>
+
+        <div class="toolbar">
+          <label class="search-control">
+            <span class="visually-hidden">Search</span>
+            <input id="search" type="search" placeholder="Search" autocomplete="off" />
+          </label>
+
+          <button id="add-task" type="button">Add task</button>
+          <label class="file-button">
+            Import tasks
+            <input id="import-tasks" type="file" accept="application/json,.json" />
+          </label>
+          <button id="export-backup" type="button">Export backup</button>
+          <button id="sign-out" type="button" hidden>Sign out</button>
+        </div>
+      </header>
+
+      <section id="board" class="board" aria-label="October 7 Sales"></section>
+    </main>
+
+    <dialog id="task-dialog">
+      <form id="task-form" method="dialog">
+        <label class="task-input">
+          <span class="visually-hidden">Add task</span>
+          <textarea id="task-title" aria-label="Add task" required autofocus></textarea>
+        </label>
+
+        <div id="column-picker" class="column-picker"></div>
+        <button type="submit">Add task</button>
+      </form>
+    </dialog>
+
+    <script src="config.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
