@@ -68,7 +68,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -202,12 +203,23 @@ h1 {
   position: relative;
   margin-bottom: 10px;
   border: 1px solid var(--ink);
+  border-left: 6px solid var(--assignee-color, var(--line));
   border-radius: 2px;
-  padding: 12px 28px 16px 12px;
-  background: #f8f4e8;
+  padding: 12px 28px 12px 9px;
+  background: color-mix(in srgb, var(--urgency-color, var(--line)) 12%, #f8f4e8);
   box-shadow: 2px 3px 0 rgba(34, 31, 26, 0.18);
   cursor: grab;
   overflow-wrap: anywhere;
+}
+
+.task-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--urgency-width, 0%);
+  height: 4px;
+  background: var(--urgency-color, var(--line));
 }
 
 .task-card::after {
@@ -218,14 +230,39 @@ h1 {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--red);
+  background: var(--urgency-color, var(--red));
   opacity: 0.72;
 }
 
-.task-card[contenteditable="true"] {
+.task-card-title {
+  display: block;
+  min-height: 1.25em;
+  white-space: pre-wrap;
+}
+
+.task-card-title[contenteditable="true"] {
   cursor: text;
   outline: 2px solid var(--red);
   outline-offset: 2px;
+}
+
+.card-assignee,
+.card-urgency {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 3px 6px;
+  color: var(--ink);
+  background: var(--paper);
+  font: 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+}
+
+.card-urgency {
+  margin-top: 6px;
 }
 
 .task-card.is-dragging {
@@ -278,6 +315,22 @@ dialog::backdrop {
   border: 1px solid var(--line);
   padding: 8px;
   background: rgba(255, 255, 255, 0.3);
+}
+
+.assignee-picker,
+.urgency-picker {
+  display: grid;
+  gap: 6px;
+}
+
+.assignee-picker select,
+.urgency-picker select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  padding: 8px;
+  background: #fbf8ef;
 }
 
 .visually-hidden {

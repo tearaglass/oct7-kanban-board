@@ -9,6 +9,16 @@ const columns = [
   { id: "done", label: "Done" },
 ];
 
+const members = [
+  { email: "oct7sales@oct7sales.com", color: "#a45e49" },
+  { email: "oct7sales@gmail.com", color: "#537b87" },
+  { email: "jlong@oct7sales.com", color: "#71834f" },
+];
+const memberByEmail = new Map(members.map((member) => [member.email, member]));
+const urgencyLabels = ["Low", "Medium", "High", "Critical"];
+const urgencyColors = ["#98a487", "#c3a065", "#bb7049", "#9e2e25"];
+const urgencyAgingMs = 14 * 24 * 60 * 60 * 1000;
+
 let state = loadLocalState();
 let draggedTaskId = null;
 let supabase = null;
@@ -27,6 +37,8 @@ const dialog = document.querySelector("#task-dialog");
 const form = document.querySelector("#task-form");
 const taskTitle = document.querySelector("#task-title");
 const columnPicker = document.querySelector("#column-picker");
+const taskAssignee = document.querySelector("#task-assignee");
+const taskUrgency = document.querySelector("#task-urgency");
 
 function emptyState() {
   return { version: 1, tasks: [] };
@@ -43,6 +55,7 @@ function loadLocalState() {
 function normalizeState(value) {
   if (!value || !Array.isArray(value.tasks)) return emptyState();
   const validColumns = new Set(columns.map((column) => column.id));
+  const now = new Date().toISOString();
   const tasks = value.tasks
     .filter((task) => task && typeof task.title === "string")
     .map((task, index) => ({
@@ -50,9 +63,21 @@ function normalizeState(value) {
       title: task.title.trim(),
       column: validColumns.has(task.column) ? task.column : columns[0].id,
       order: Number.isFinite(task.order) ? task.order : index,
+      assignee: memberByEmail.has(task.assignee) ? task.assignee : null,
+      urgency: Number.isInteger(task.urgency) && task.urgency >= 0 && task.urgency <= 3 ? task.urgency : 0,
+      urgencySetAt: validDate(task.urgencySetAt) || now,
+      completedAt: validColumns.has(task.column) && task.column === "done"
+        ? validDate(task.completedAt) || now
+        : null,
     }))
     .filter((task) => task.title);
   return { version: 1, tasks };
+}
+
+function validDate(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value))
+    ? new Date(value).toISOString()
+    : null;
 }
 
 function saveLocalState() {
@@ -73,7 +98,10 @@ function showAuth(status = "") {
 
 async function initialize() {
   renderColumnPicker();
+  renderAssigneeOptions(taskAssignee);
+  renderUrgencyOptions(taskUrgency);
   renderBoard();
+  window.setInterval(updateUrgencyAppearance, 60 * 1000);
   const config = window.OCT7_CONFIG || {};
 
   if (!config.supabaseUrl || !config.supabasePublishableKey) {
@@ -123,7 +151,7 @@ async function handleSession(session) {
 async function loadSharedState() {
   const { data, error } = await supabase
     .from("tasks")
-    .select("id,title,column_id,position")
+    .select("id,title,column_id,position,assignee_email,urgency_base,urgency_set_at,completed_at")
     .order("position", { ascending: true });
 
   if (error) {
@@ -138,6 +166,10 @@ async function loadSharedState() {
       title: task.title,
       column: task.column_id,
       order: Number(task.position),
+      assignee: task.assignee_email,
+      urgency: task.urgency_base,
+      urgencySetAt: task.urgency_set_at,
+      completedAt: task.completed_at,
     })),
   };
   renderBoard();
@@ -156,12 +188,17 @@ function stopRealtime() {
   taskChannel = null;
 }
 
-async function createTask(title, column) {
+async function createTask(title, column, assignee = null, urgency = 0, urgencySetAt = null, completedAt = null) {
+  const now = new Date().toISOString();
   const task = {
     id: crypto.randomUUID(),
     title,
     column,
     order: nextOrder(column),
+    assignee: memberByEmail.has(assignee) ? assignee : null,
+    urgency: Number.isInteger(urgency) && urgency >= 0 && urgency <= 3 ? urgency : 0,
+    urgencySetAt: validDate(urgencySetAt) || now,
+    completedAt: column === "done" ? validDate(completedAt) || now : null,
   };
   state.tasks.push(task);
   saveLocalState();
@@ -172,9 +209,9 @@ async function createTask(title, column) {
   if (error) await loadSharedState();
 }
 
-async function updateTask(task) {
+async function updateTask(task, rerender = true) {
   saveLocalState();
-  renderBoard();
+  if (rerender) renderBoard();
   if (!sharedMode) return;
 
   const { error } = await supabase
@@ -183,6 +220,10 @@ async function updateTask(task) {
       title: task.title,
       column_id: task.column,
       position: task.order,
+      assignee_email: task.assignee,
+      urgency_base: task.urgency,
+      urgency_set_at: task.urgencySetAt,
+      completed_at: task.completedAt,
       updated_at: new Date().toISOString(),
     })
     .eq("id", task.id);
@@ -205,6 +246,10 @@ function toDatabaseTask(task) {
     title: task.title,
     column_id: task.column,
     position: task.order,
+    assignee_email: task.assignee,
+    urgency_base: task.urgency,
+    urgency_set_at: task.urgencySetAt,
+    completed_at: task.completedAt,
     updated_at: new Date().toISOString(),
   };
 }
@@ -248,7 +293,35 @@ function createTaskCard(task, query) {
   card.dataset.taskId = task.id;
   card.draggable = true;
   card.tabIndex = 0;
-  card.textContent = task.title;
+  card.style.setProperty("--assignee-color", memberByEmail.get(task.assignee)?.color || "#aaa18f");
+  const title = document.createElement("span");
+  title.className = "task-card-title";
+  title.textContent = task.title;
+  const assignee = document.createElement("select");
+  assignee.className = "card-assignee";
+  assignee.setAttribute("aria-label", "Assigned to");
+  renderAssigneeOptions(assignee, task.assignee);
+  assignee.addEventListener("pointerdown", () => { card.draggable = false; });
+  assignee.addEventListener("blur", () => { card.draggable = true; });
+  assignee.addEventListener("change", () => {
+    task.assignee = assignee.value || null;
+    card.style.setProperty("--assignee-color", memberByEmail.get(task.assignee)?.color || "#aaa18f");
+    updateTask(task, false);
+  });
+  const urgency = document.createElement("select");
+  urgency.className = "card-urgency";
+  urgency.setAttribute("aria-label", "Urgency");
+  renderUrgencyOptions(urgency, task.urgency);
+  urgency.addEventListener("pointerdown", () => { card.draggable = false; });
+  urgency.addEventListener("blur", () => { card.draggable = true; });
+  urgency.addEventListener("change", () => {
+    task.urgency = Number(urgency.value);
+    task.urgencySetAt = new Date().toISOString();
+    setUrgencyAppearance(card, task);
+    updateTask(task, false);
+  });
+  card.append(title, assignee, urgency);
+  setUrgencyAppearance(card, task);
   card.classList.toggle(
     "is-hidden",
     Boolean(query) && !task.title.toLocaleLowerCase().includes(query),
@@ -263,25 +336,28 @@ function createTaskCard(task, query) {
     card.classList.remove("is-dragging");
     document.querySelectorAll(".task-list").forEach((list) => list.classList.remove("is-over"));
   });
-  card.addEventListener("dblclick", () => beginEditing(card, task));
+  card.addEventListener("dblclick", (event) => {
+    if (event.target !== assignee && event.target !== urgency) beginEditing(card, title, task);
+  });
   card.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !card.isContentEditable) {
+    if (event.target !== card) return;
+    if (event.key === "Enter") {
       event.preventDefault();
-      beginEditing(card, task);
+      beginEditing(card, title, task);
     }
-    if ((event.key === "Delete" || event.key === "Backspace") && !card.isContentEditable) {
+    if (event.key === "Delete" || event.key === "Backspace") {
       deleteTask(task.id);
     }
   });
   return card;
 }
 
-function beginEditing(card, task) {
+function beginEditing(card, titleElement, task) {
   card.draggable = false;
-  card.contentEditable = "true";
-  card.focus();
+  titleElement.contentEditable = "true";
+  titleElement.focus();
   const range = document.createRange();
-  range.selectNodeContents(card);
+  range.selectNodeContents(titleElement);
   range.collapse(false);
   const selection = window.getSelection();
   selection.removeAllRanges();
@@ -289,24 +365,26 @@ function beginEditing(card, task) {
 
   const handleEditKeydown = (event) => {
     if (event.key === "Escape") {
-      card.textContent = task.title;
-      card.blur();
+      titleElement.textContent = task.title;
+      titleElement.blur();
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      card.blur();
+      titleElement.blur();
     }
   };
   const finish = () => {
-    const title = card.textContent.trim();
+    const previousTitle = task.title;
+    const title = titleElement.textContent.trim();
     if (title) task.title = title;
-    card.contentEditable = "false";
+    else titleElement.textContent = task.title;
+    titleElement.contentEditable = "false";
     card.draggable = true;
-    card.removeEventListener("keydown", handleEditKeydown);
-    updateTask(task);
+    titleElement.removeEventListener("keydown", handleEditKeydown);
+    if (title && title !== previousTitle) updateTask(task);
   };
-  card.addEventListener("blur", finish, { once: true });
-  card.addEventListener("keydown", handleEditKeydown);
+  titleElement.addEventListener("blur", finish, { once: true });
+  titleElement.addEventListener("keydown", handleEditKeydown);
 }
 
 function handleDragOver(event) {
@@ -320,6 +398,10 @@ function handleDrop(event) {
   event.currentTarget.classList.remove("is-over");
   const task = state.tasks.find((item) => item.id === draggedTaskId);
   if (!task || !columns.some((column) => column.id === destination)) return;
+  if (task.column !== destination) {
+    if (destination === "done") task.completedAt = new Date().toISOString();
+    else if (task.column === "done") task.completedAt = null;
+  }
   task.column = destination;
   task.order = nextOrder(destination);
   updateTask(task);
@@ -346,6 +428,65 @@ function renderColumnPicker() {
   });
 }
 
+function renderAssigneeOptions(select, selected = null) {
+  select.replaceChildren();
+  const unassigned = document.createElement("option");
+  unassigned.value = "";
+  unassigned.textContent = "Unassigned";
+  select.append(unassigned);
+  for (const member of members) {
+    const option = document.createElement("option");
+    option.value = member.email;
+    option.textContent = member.email;
+    select.append(option);
+  }
+  select.value = selected || "";
+}
+
+function renderUrgencyOptions(select, selected = 0) {
+  select.replaceChildren();
+  urgencyLabels.forEach((label, level) => {
+    const option = document.createElement("option");
+    option.value = String(level);
+    option.textContent = label;
+    select.append(option);
+  });
+  select.value = String(selected);
+}
+
+function effectiveUrgency(task) {
+  const start = Date.parse(task.urgencySetAt);
+  const end = task.column === "done" ? Date.parse(task.completedAt || task.urgencySetAt) : Date.now();
+  const elapsed = Math.max(0, end - start);
+  const progress = Math.min(1, elapsed / urgencyAgingMs);
+  return task.urgency + (3 - task.urgency) * progress;
+}
+
+function urgencyColor(value) {
+  const lower = Math.min(3, Math.floor(value));
+  const upper = Math.min(3, lower + 1);
+  const mix = value - lower;
+  const start = urgencyColors[lower].slice(1).match(/../g).map((part) => parseInt(part, 16));
+  const end = urgencyColors[upper].slice(1).match(/../g).map((part) => parseInt(part, 16));
+  const channels = start.map((part, index) => Math.round(part + (end[index] - part) * mix));
+  return "rgb(" + channels.join(", ") + ")";
+}
+
+function setUrgencyAppearance(card, task) {
+  const value = effectiveUrgency(task);
+  card.style.setProperty("--urgency-color", urgencyColor(value));
+  card.style.setProperty("--urgency-width", Math.round((value / 3) * 100) + "%");
+  const select = card.querySelector(".card-urgency");
+  if (select && document.activeElement !== select) select.value = String(Math.floor(value));
+}
+
+function updateUrgencyAppearance() {
+  document.querySelectorAll(".task-card").forEach((card) => {
+    const task = state.tasks.find((item) => item.id === card.dataset.taskId);
+    if (task) setUrgencyAppearance(card, task);
+  });
+}
+
 authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   authStatus.textContent = "";
@@ -365,13 +506,17 @@ signOutButton.addEventListener("click", async () => {
 document.querySelector("#add-task").addEventListener("click", () => {
   form.reset();
   renderColumnPicker();
+  taskAssignee.value = "";
+  taskUrgency.value = "0";
   dialog.showModal();
 });
 
 form.addEventListener("submit", () => {
   const title = taskTitle.value.trim();
   const column = new FormData(form).get("column") || columns[0].id;
-  if (title) createTask(title, column);
+  const assignee = taskAssignee.value || null;
+  const urgency = Number(taskUrgency.value);
+  if (title) createTask(title, column, assignee, urgency);
 });
 
 search.addEventListener("input", renderBoard);
@@ -390,7 +535,9 @@ document.querySelector("#import-tasks").addEventListener("change", async (event)
   if (!file) return;
   try {
     const imported = normalizeState(JSON.parse(await file.text()));
-    for (const task of imported.tasks) await createTask(task.title, task.column);
+    for (const task of imported.tasks) {
+      await createTask(task.title, task.column, task.assignee, task.urgency, task.urgencySetAt, task.completedAt);
+    }
   } catch {
     authStatus.textContent = "Access unavailable";
   } finally {
